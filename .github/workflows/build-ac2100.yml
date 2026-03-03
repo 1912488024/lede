@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 配置编译环境
+      - name: 1. 配置编译环境（安装所有依赖）
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -26,7 +26,7 @@ jobs:
             rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
           sudo apt autoremove -y && sudo apt clean -y
 
-      - name: 2. 克隆 Lean 源码
+      - name: 2. 克隆 Lean 源码（你的 Fork 仓库）
         uses: actions/checkout@main
         with:
           repository: ${{ github.repository }}
@@ -37,17 +37,18 @@ jobs:
       - name: 3. 下载非自带插件（仅 OpenClash + AdGuardHome）
         run: |
           cd lede/package
-          # 科学上网：OpenClash
+          # 科学上网：OpenClash（稳定无兼容问题）
           git clone --depth=1 https://github.com/vernesong/OpenClash.git
           # 广告拦截：AdGuardHome（超容可换 luci-app-adbyby-plus）
           git clone --depth=1 https://github.com/rufengsuixing/luci-app-adguardhome.git
 
-      - name: 4. 配置编译参数（核心：新增 USB 网络共享）
+      - name: 4. 配置编译参数（核心修复：替换不存在的 ax6000.config）
         run: |
           cd lede
-          cp configs/templates/ax6000.config .config
+          # 修复核心：生成 ramips/mt7621 平台最小化配置（替代不存在的 ax6000.config）
+          make defconfig
           
-          # ========== 1. USB 网络共享（CPE 核心） ==========
+          # ========== 1. USB 网络共享（CPE 核心：手机共享网络） ==========
           echo 'CONFIG_PACKAGE_kmod-usb-net=y' >> .config
           echo 'CONFIG_PACKAGE_kmod-usb-net-rndis=y' >> .config
           echo 'CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y' >> .config
@@ -57,7 +58,7 @@ jobs:
           echo 'CONFIG_PACKAGE_luci-app-samba4=y' >> .config
           echo 'CONFIG_PACKAGE_luci-app-usb-printer=y' >> .config
           
-          # ========== 3. 网络功能（无签到） ==========
+          # ========== 3. 网络功能（无签到，核心刚需） ==========
           echo 'CONFIG_PACKAGE_luci-app-openclash=y' >> .config
           echo 'CONFIG_PACKAGE_luci-app-adguardhome=y' >> .config
           echo 'CONFIG_PACKAGE_luci-app-accesscontrol=y' >> .config
@@ -65,22 +66,27 @@ jobs:
           echo 'CONFIG_PACKAGE_luci-app-nlbwmon=y' >> .config
           echo 'CONFIG_PACKAGE_luci-app-autoreboot=y' >> .config
           
-          # ========== 4. AC2100 硬件参数（不可改） ==========
+          # ========== 4. 强制指定 AC2100 硬件参数（不可修改） ==========
           sed -i 's/TARGET_BOARD.*/TARGET_BOARD="ramips"/g' .config
           sed -i 's/TARGET_SUBTARGET.*/TARGET_SUBTARGET="mt7621"/g' .config
           sed -i 's/TARGET_PROFILE.*/TARGET_PROFILE="xiaomi_ac2100"/g' .config
           
-          # 清理配置
+          # 清理无效配置，确认最终编译项
           make defconfig
 
-      - name: 5. 下载依赖 + 编译
+      - name: 5. 下载编译依赖包（避免依赖缺失报错）
         run: |
           cd lede
           make download -j8
+          # 删除空的依赖文件（关键：防止编译报错）
           find dl -size -1024c -exec rm -f {} \;
+
+      - name: 6. 编译固件（多线程失败则单线程重试，提高成功率）
+        run: |
+          cd lede
           make -j$(nproc) || make -j1 || make -j1 V=s
 
-      - name: 6. 上传固件
+      - name: 7. 上传编译好的固件（编译完成后可直接下载）
         uses: actions/upload-artifact@main
         with:
           name: AC2100-CPE-USB-Firmware
