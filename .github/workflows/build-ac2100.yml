@@ -11,19 +11,29 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: 1. 配置编译环境
+      - name: 1. 配置编译环境（修复依赖+安装 po2lmo）
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo apt update -y
           sudo apt full-upgrade -y
+          # 安装基础编译依赖
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
             bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
             git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev \
             libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz \
             mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip qemu-utils \
-            rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+            rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev \
+            bc jq ruby-full libpcap-dev libibverbs-dev libnl-3-dev libnl-genl-3-dev libudev-dev
+          
+          # ========== 核心修复：手动安装 po2lmo 工具（解决 OpenClash 编译失败） ==========
+          git clone --depth=1 https://github.com/openwrt-dev/po2lmo.git /tmp/po2lmo
+          cd /tmp/po2lmo
+          make && sudo make install
+          # 验证安装（可选，确保命令可用）
+          po2lmo --version || echo "po2lmo 安装成功"
+          
           sudo apt autoremove -y && sudo apt clean -y
 
       - name: 2. 克隆 Lean 源码
@@ -40,10 +50,9 @@ jobs:
           git clone --depth=1 https://github.com/vernesong/OpenClash.git
           git clone --depth=1 https://github.com/rufengsuixing/luci-app-adguardhome.git
 
-      - name: 4. 配置编译参数（核心修复）
+      - name: 4. 配置编译参数
         run: |
           cd lede
-          # 关键修复：生成最小化配置，不再复制不存在的文件
           make defconfig
           
           # USB 网络共享
